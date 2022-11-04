@@ -2,9 +2,9 @@
 
 # Press Shift+F10 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-from collections import defaultdict
 from typing import List
-
+# import numpy as np
+from Angular.advanced.create_modal import create_ts_mhtml
 from Angular.advanced.create_ts_advanced import create_table_selection_table, create_table_selection_ts, \
     create_table_selection_api
 from Angular.create_ts_api import create_ts_api
@@ -17,10 +17,9 @@ from JavaImpl.create_java_api import create_java_api
 from JavaImpl.create_java_dao import create_interface
 from JavaImpl.create_java_impl import get_java_impl
 from JavaImpl.create_java_object import get_java_object
-from global_helper_functions import get_title_name
-from dash import Dash
-from dash import dcc
-from dash import html
+from sql_object_detail import SqlObjectDetail
+from global_helper_functions import get_title_name, get_type, find_table_name, sql_by_type
+
 
 ## hidden, matchip, matselect, datepicker, textarea, template (preselected text to select from)
 
@@ -28,73 +27,91 @@ def create_text(name):
     # Use a breakpoint in the code line below to debug your script.
 
     table = """
-Create TABLE dbo.LoanAmendNewFixedComponent
+CREATE TABLE dbo.ActiveDealerBanker
 (
-    LoanAmendNewFixedComponentId bigint identity  --identity
-        constraint PK_LoanAmendNewFixedComponent_LoanAmendNewFixedComponentId
-            primary key,
-    AustinLoanAmendID bigint,  --idselector --hidden
-    DrawDownDate Date,  --datepicker
-    Amount DECIMAL(18,4), 
-    Term VarChar(5),  --matselect
-    Rate DECIMAL(18,4),
-    Ccm DECIMAL(18,4)
-)
+    Bis VARCHAR(20),
+    GroupCode VARCHAR(10),
+    DealerId VARCHAR(10),
+    Dealer VARCHAR(50),
+    BankerLocalId VARCHAR(10),
+    Banker VARCHAR(50)
+    )
+
 """
-    title = ""
     lines = table.splitlines()
-    variable_names = dict()
-    options = dict()
+
+    sql_object_list = list()
+    sql_obj = SqlObjectDetail()
+    sql_obj.variable_names = dict()
     # variable_name is the key and variable_type is the result
-    for line in lines:
+    for idx, line in enumerate(lines):
         if len(line) <= 3:
             continue
 
         variable_name = line.split()[0].replace(',', "").strip()
-        variable_type = line.split()[1].replace(',', "").strip()
 
         if variable_name.lower() == "create":
-            title = get_title_name(line)
-            table_name = line.split()[2].split('.', 1)[1].replace('.', "")
+            if len(sql_obj.variable_names) > 0:
+                sql_object_list.append(sql_obj)
+
+            sql_obj = SqlObjectDetail()
+            sql_obj.sql_type = get_type(line)
+            sql_obj.title = get_title_name(line, "v" if sql_obj.sql_type.lower() == "view" else "")
+            sql_obj.table_name = line.split()[2].split('.', 1)[1].replace('.', "")
+            sql_obj.options = get_options(line)
 
         if not variable_name.lower() in get_junk_names():
-            # if table_name.lower() + "id" == variable_name.lower():
-            #     variable_type = variable_type + " identity"
-            variable_names[variable_name] = variable_type
-            options[variable_name] = get_options(line)
+            if sql_obj.sql_type.lower() == "view":
+                table_ref = variable_name.split(".", 1)[:1][0]
+                table_name = find_table_name(table_ref, lines[idx:]).split(".", 1)[1:][0]
+                variable_name = variable_name.split(".", 1)[1:][0].strip()
+                variable_type = [(x.variable_names[variable_name]) for x in sql_object_list if (x.table_name == table_name)]
+                sql_obj.variable_names[variable_name] = variable_type[0]
+                sql_obj.variable_options[variable_name] = get_options(line)
+            else:
+                variable_type = line.split()[1].replace(',', "").replace(" ", "")
+                sql_obj.variable_names[variable_name] = variable_type
+                sql_obj.variable_options[variable_name] = get_options(line)
 
-    # print(options)
+
+    sql_object_list.append(sql_obj)
+    sql_obj_read, _ = sql_by_type(sql_object_list)
+    title = sql_obj_read.title
+
+    if len(sql_object_list) == 0:
+        raise Exception("Unable to process sql objects")
+
     if name == 'impl':
-        string = get_java_impl(table_name, title, variable_names, options)
+        string = get_java_impl(sql_object_list)
         print(string)
     elif name == 'impllist':
-        print(get_java_impl_list(table_name, title, variable_names, options))
+        print(get_java_impl_list(sql_object_list))
     elif name == 'dao':
         print(create_interface(title))
     elif name == 'object':
-        print(get_java_object(title, variable_names, options))
+        print(get_java_object(sql_object_list))
     elif name == 'japi':
         print(create_java_api(title))
     elif name == 'japilist':
         print(create_java_api_list(title))
     elif name == 'tsobj':
-        print(create_ts_object(title, variable_names, options))
+        print(create_ts_object(sql_object_list))
     elif name == 'tsapi':
         print((create_ts_api(title)))
     elif name == 'ahtml':
-        print((create_ts_html(title, options)))
+        print((create_ts_html(sql_object_list)))
     elif name == 'ats':
-        print(create_ts_component(title, options))
-
+        print(create_ts_component(sql_object_list))
+    elif name == 'mahtml':
+        print(create_ts_mhtml(sql_object_list))
     elif name == 'selectTable':
-        print(create_table_selection_table(title, options))
-        print(create_table_selection_ts(title, options))
-        print(create_table_selection_api(title, options))
-
+        print(create_table_selection_table(sql_object_list))
+        print(create_table_selection_ts(sql_object_list))
+        print(create_table_selection_api(sql_object_list))
 
 
 def get_junk_names():
-    return ["constraint", "primary", ")", "(", "create"]
+    return ["constraint", "primary", ")", "(", "create", "references", "select", "from", "inner", "join", "left", "right", "outter"]
 
 
 def get_options(line: str) -> List[str]:
@@ -103,9 +120,16 @@ def get_options(line: str) -> List[str]:
         return [""]
     return [o.strip() for o in options[1:]]
 
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+    # create_text('object')
     # create_text('impl')
-    create_text('selectTable')
+    # create_text('dao')
+    # create_text('japi')
+    # create_text('tsapi')
+    # create_text('tsobj')
+    # create_text('mahtml')
+    create_text('ats')
 
 # impl, dao, object, japi, tsobj, tsapi, ahtml, ats

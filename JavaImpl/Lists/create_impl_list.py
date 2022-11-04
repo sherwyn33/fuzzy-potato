@@ -1,18 +1,21 @@
 # gets the string for the constructor
-from collections import defaultdict
+from typing import List
 
 from JavaImpl.create_java_impl import get_object_builder
 from JavaImpl.java_helper_functions import get_type
-from global_helper_functions import first_lowercase
+from sql_object_detail import SqlObjectDetail
+from global_helper_functions import first_lowercase, sql_by_type
 
 
-def get_java_impl_list(table_name: str, title: str, variable_names: str, options: dict) -> str:
-    for key in options:
-        if "hidden" in options[key]:
-            variable_names.pop(key)
-    return get_constructor(title) + "\n\n" + create_get_function(table_name, title, variable_names, options) + "\n\n" + \
-           create_update_function(table_name, title, variable_names, options) + '\n' + get_local_date_text() + "\n" + "}"
-
+def get_java_impl_list(sql_obj_list: List[SqlObjectDetail]) -> str:
+    for sql_obj in sql_obj_list:
+        for key in sql_obj.variable_options:
+            if "hidden" in sql_obj.variable_options[key]:
+                sql_obj.variable_names.pop(key)
+    sql_obj_read, sql_obj_write = sql_by_type(sql_obj_list)
+    title = sql_obj_read.title
+    return get_constructor(title) + "\n\n" + create_get_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options) + "\n\n" + \
+           create_update_function(sql_obj_write.table_name, title, sql_obj_write.variable_names, sql_obj_write.variable_options) + '\n' + get_local_date_text() + "\n" + "}"
 
 def get_constructor(title: str):
     return """import nz.co.bnz.marginchange.app.loans.DataAccessException;
@@ -79,15 +82,39 @@ def get_recordset_getter(key: str, variables: dict):
     return 'rs.getObject("' + key + '")'
 
 
+def get_selection_options(selection_options: list, variables: dict, type: int) -> str:
+    string = ""
+    for idx, selection_option in enumerate(selection_options):
+        if type == 1:
+            string = string + get_type(selection_option[0], variables) + " " + selection_option[0] + ", "
+        elif type == 2:
+            string = string + selection_option[0] + " = ? AND "
+        elif type == 3:
+            string = string + "stmt.set" + get_type(selection_option[0], variables).capitalize() + "(" + str(idx + 1) + ", " + selection_option[0] + """);
+            """
+    if type == 1:
+        string = string[:-2]
+    elif type == 2:
+        string = string[:-5] + '";\n'
+
+    return string
+
+
+
+
+
 def create_get_function(table_name: str, title: str, variables: dict, options: dict):
-    selection_option = list({key: options[key] for key in options if "idselector" in options[key]}.items())[0]
+    try:
+        selection_options = list({key: options[key] for key in options if "idselector" in options[key]}.items())
+    except:
+        raise Exception("idselector option not found in read sql object. Add --idselector to a column")
     return """    @Override
-    public List<""" + title + "> Get" + title + """s(""" + get_type(selection_option[0], variables) + """ id) {
+    public List<""" + title + "> Get" + title + """s(""" + get_selection_options(selection_options, variables, 1) + """) {
         String sql = "Select """ + get_variable_name_list(variables, options) + \
-           "FROM " + table_name + " WHERE " + selection_option[0] + r' =?";' + """
+           "FROM " + table_name + " WHERE " + get_selection_options(selection_options, variables, 2) + """
                 try (Connection conn = ds.getConnection() ;
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-             stmt.set""" + get_type(selection_option[0], variables).capitalize() + """(1, id);
+             """ + get_selection_options(selection_options, variables, 3) + """
             try (ResultSet rs = stmt.executeQuery()) {
 
                 List<""" + title + """> request = readResultAs""" + title + "(rs);" + """
@@ -188,9 +215,9 @@ def get_update_variables(variables: dict, index: int, skip_id: int = False):
             i = 0
     if i > 0:
         string = string[:-2]
-        return string + add_quotation_line()
+        return string + ';";'
     string = string[:-9]
-    return string
+    return string  + ';";'
 
 
 def create_question_marks(count: int) -> str:

@@ -1,15 +1,20 @@
 # gets the string for the constructor
 from collections import defaultdict
+from typing import List
 
-from global_helper_functions import first_lowercase
+from sql_object_detail import SqlObjectDetail
+from global_helper_functions import first_lowercase, sql_by_type
 
 
-def get_java_impl(table_name: str, title: str, variable_names: str, options: dict) -> str:
-    for key in options:
-        if "hidden" in options[key]:
-            variable_names.pop(key)
-    return get_constructor(title) + "\n\n" + create_get_function(table_name, title, variable_names, options) + "\n\n" + \
-           create_update_function(table_name, title, variable_names, options) + '\n' + get_local_date_text() + "\n" + "}"
+def get_java_impl(sql_obj_list: List[SqlObjectDetail]) -> str:
+    for sql_obj in sql_obj_list:
+        for key in sql_obj.variable_options:
+            if "hidden" in sql_obj.variable_options[key]:
+                sql_obj.variable_names.pop(key)
+    sql_obj_read, sql_obj_write = sql_by_type(sql_obj_list)
+    title = sql_obj_read.title
+    return get_constructor(title) + "\n\n" + create_get_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options) + "\n\n" + \
+           create_update_function(sql_obj_write.table_name, title, sql_obj_write.variable_names, sql_obj_write.variable_options) + '\n' + get_local_date_text() + "\n" + "}"
 
 
 def get_constructor(title: str):
@@ -80,14 +85,20 @@ def get_recordset_getter(key: str, variables: dict):
         return 'toLocalDate(rs.getDate("' + key + '"))'
     elif "bit" in variables[key].lower():
         return 'rs.getBoolean("' + key + '")'
+    elif "varbinary" in variables[key].lower():
+        return 'rs.getBytes("' + key + '")'
     return 'rs.getObject("' + key + '")'
 
 
 def create_get_function(table_name: str, title: str, variables: dict, options: dict):
+    selection_option = list({key: options[key] for key in options if "idselector" in options[key]}.items())
+    selector = title + "ID";
+    if len(selection_option) > 0:
+        selector = selection_option[0][0]
     return """    @Override
     public """ + title + " Get" + title + """(int id) {
         String sql = "Select """ + get_variable_name_list(variables, options) + \
-           "FROM " + table_name + " WHERE " + title + r'ID =?";' + """
+           "FROM " + table_name + " WHERE " + selector + r'=?";' + """
                 try (Connection conn = ds.getConnection() ;
              PreparedStatement stmt = conn.prepareStatement(sql)) {
              stmt.setInt(1, id);
@@ -176,6 +187,8 @@ def get_recordset_setter(key: str, variables: dict) -> str:
             key) + "() != null ? java.sql.Date.valueOf(command." + first_lowercase(key) + "()) : null);"
     elif "bit" in variables[key].lower():
         return "stmt.setBoolean(++c, command." + first_lowercase(key) + "());"
+    elif "varbinary" in variables[key].lower():
+        return "stmt.setBytes(++c, command." + first_lowercase(key) + "());"
     return "stmt.setObject(++c, command." + first_lowercase(key) + "());"
 
 

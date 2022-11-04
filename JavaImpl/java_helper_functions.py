@@ -13,6 +13,8 @@ def get_type(key: str, variables: dict) -> str:
         return "LocalDate"
     elif "bit" in variables[key].lower():
         return "Boolean"
+    elif "varbinary" in variables[key].lower():
+        return "byte[]"
     return "String"
 
 

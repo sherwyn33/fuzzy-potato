@@ -1,13 +1,17 @@
+from typing import List
+
 from JavaImpl.java_helper_functions import get_type
-from global_helper_functions import first_lowercase
+from sql_object_detail import SqlObjectDetail
+from global_helper_functions import first_lowercase, combine_sql_list
 
 
-def get_java_object(title: str, variables: dict, options: dict) -> str:
-    for key in options:
-        if "hidden" in options[key]:
-            variables.pop(key)
-    return get_imports() + get_object_fields(title, variables) + create_private_builder(title, variables) + \
-             "\n\n" + create_public_getters(variables) + create_static_builder_text(title, variables) + "\n}"
+def get_java_object(sql_object_list: List[SqlObjectDetail]) -> str:
+    sql_obj = combine_sql_list(sql_object_list)
+    for key in sql_obj.variable_options:
+        if "hidden" in sql_obj.variable_options[key]:
+            sql_obj.variable_names.pop(key)
+    return get_imports() + get_object_fields(sql_obj.title, sql_obj.variable_names) + create_private_builder(sql_obj.title, sql_obj.variable_names) + \
+             "\n\n" + create_public_getters(sql_obj.variable_names) + create_static_builder_text(sql_obj.title, sql_obj.variable_names) + "\n}"
 
 
 def get_imports():

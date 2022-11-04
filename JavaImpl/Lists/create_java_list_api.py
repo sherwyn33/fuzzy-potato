@@ -58,7 +58,7 @@ def create_get_request(title: str) -> str:
     return '@Path("/{requestId}/get' + title + """s")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public List<""" + title + "> get" + title + """s(@PathParam("requestId") long[] requestId) {
+    public List<""" + title + "> get" + title + """s(@PathParam("requestId") long requestId) {
         return this.""" + first_lowercase(title) + "Dao." + "Get" + title + """s(requestId);
     }
     """
