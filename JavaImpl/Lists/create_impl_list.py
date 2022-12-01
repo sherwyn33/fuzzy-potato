@@ -1,7 +1,7 @@
 # gets the string for the constructor
 from typing import List
 
-from JavaImpl.create_java_impl import get_object_builder
+from JavaImpl.create_java_impl import get_object_builder, create_query_function
 from JavaImpl.java_helper_functions import get_type
 from sql_object_detail import SqlObjectDetail
 from global_helper_functions import first_lowercase, sql_by_type
@@ -12,10 +12,19 @@ def get_java_impl_list(sql_obj_list: List[SqlObjectDetail]) -> str:
         for key in sql_obj.variable_options:
             if "hidden" in sql_obj.variable_options[key]:
                 sql_obj.variable_names.pop(key)
+
     sql_obj_read, sql_obj_write = sql_by_type(sql_obj_list)
     title = sql_obj_read.title
-    return get_constructor(title) + "\n\n" + create_get_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options) + "\n\n" + \
-           create_update_function(sql_obj_write.table_name, title, sql_obj_write.variable_names, sql_obj_write.variable_options) + '\n' + get_local_date_text() + "\n" + "}"
+    includeQuery = False
+    if "filterTable" in sql_obj_read.options:
+        includeQuery = True
+
+    string = get_constructor(title) + "\n\n" + create_get_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options) + "\n\n" + \
+             create_update_function(sql_obj_write.table_name, title, sql_obj_write.variable_names, sql_obj_write.variable_options) + '\n' + get_local_date_text()
+    if includeQuery:
+        string = string + "\n\n" + create_query_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options)
+
+    return string + "\n" + "}"
 
 def get_constructor(title: str):
     return """import nz.co.bnz.marginchange.app.loans.DataAccessException;
@@ -73,9 +82,9 @@ def get_recordset_getter(key: str, variables: dict):
         return 'rs.getInt("' + key + '")'
     elif "decimal" in variables[key].lower():
         return 'rs.getBigDecimal("' + key + '")'
-    elif "date" in variables[key].lower():
-        return 'toLocalDate(rs.getDate("' + key + '"))'
     elif "datetime" in variables[key].lower():
+        return 'rs.getTimeStamp("' + key + '").toLocalDateTime()'
+    elif "date" in variables[key].lower():
         return 'toLocalDate(rs.getDate("' + key + '"))'
     elif "bit" in variables[key].lower():
         return 'rs.getBoolean("' + key + '")'
@@ -188,10 +197,10 @@ def get_recordset_setter(key: str, variables: dict) -> str:
         return "stmt.setInt(++c, command." + first_lowercase(key) + "());"
     elif "decimal" in variables[key].lower():
         return "stmt.setBigDecimal(++c, command." + first_lowercase(key) + "());"
-    elif "date" in variables[key].lower():
-        return "stmt.setDate(++c, command." + first_lowercase(
-            key) + "() != null ? java.sql.Date.valueOf(command." + first_lowercase(key) + "()) : null);"
     elif "datetime" in variables[key].lower():
+        return "stmt.setTimestamp(++c, command." + first_lowercase(
+            key) + "() != null ? Timestamp.valueOf(command." + first_lowercase(key) + "()) : null);"
+    elif "date" in variables[key].lower():
         return "stmt.setDate(++c, command." + first_lowercase(
             key) + "() != null ? java.sql.Date.valueOf(command." + first_lowercase(key) + "()) : null);"
     elif "bit" in variables[key].lower():
@@ -244,4 +253,9 @@ def get_local_date_text():
             return null;
 
         return date.toLocalDate();
+        
+            private LocalDateTime toLocalDateTime(Timestamp localDateTime)
+    {
+        return localDateTime == null ? null : localDateTime.toLocalDateTime();
+    }
     }"""

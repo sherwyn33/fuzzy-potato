@@ -1,8 +1,13 @@
-from Angular.typescript_helper_functions import variable_title, quotation_variable
-from global_helper_functions import add_quotation_marks, first_lowercase
+from typing import List
 
-def create_ts_html(title: str, options: dict) -> str:
-    return create_header(title) + create_fields(title, options) + create_footer()
+from Angular.typescript_helper_functions import variable_title, quotation_variable
+from sql_object_detail import SqlObjectDetail
+from global_helper_functions import add_quotation_marks, first_lowercase, sql_by_type
+
+
+def create_ts_html(sql_object_list: List[SqlObjectDetail]) -> str:
+    sql_obj, _ = sql_by_type(sql_object_list)
+    return create_header(sql_obj.title) + create_fields(sql_obj.title, sql_obj.variable_options) + create_footer()
 
 
 def create_header(title: str) -> str:
@@ -35,6 +40,8 @@ def get_input(title: str, key: str, options: dict) -> str:
     option = options[key]
     string = ""
     if option:
+        if "read" in option:
+            return string
         if "hidden" in option:
             return string
         if "identity" in option:
@@ -60,6 +67,10 @@ def get_input(title: str, key: str, options: dict) -> str:
             string = """
                   <mat-slide-toggle name="""  + add_quotation_marks(first_lowercase(key)) + """ [(ngModel)]=""" + quotation_variable(title, key) + \
             ' labelPosition="before" color="primary" [disabled]="isDisabled">' + variable_title(key) + '</mat-slide-toggle>\n'
+        if "checkbox" in option:
+            string = """    <br>
+                  <mat-checkbox name="""  + add_quotation_marks(first_lowercase(key)) + """ [(ngModel)]=""" + quotation_variable(title, key) + \
+            ' labelPosition="before" color="primary" [disabled]="isDisabled">\n<span class="text-wrap">' + variable_title(key) + '</span></mat-checkbox>\n'
         if "matchip" in option:
             string = string + """
         <div>
@@ -109,6 +120,18 @@ def get_input(title: str, key: str, options: dict) -> str:
         if "email-selector" in option:
             string = string + """<app-email-selector name=""" + add_quotation_marks(first_lowercase(key)) + """ [(ngModel)]="this.selected""" + key + """" [isDisabled]="isDisabled"
                         [customer]="this.workFlow.customer" [bis]="this.workFlow.bis"></app-email-selector>"""
+        if "autocomplete" in option:
+            string = string + """<mat-form-field style="min-width: 250px">
+            <h5 class="mat-cell">""" + key + """</h5>
+            <input type="text" [matAutocomplete]=auto""" + key + """ [(ngModel)]=""" + quotation_variable(title, key) + """ (ngModelChange)="filter""" + key + """($event)"
+                   matInput placeholder="">
+            <mat-autocomplete #auto""" + key + """="matAutocomplete">
+              <mat-option *ngFor="let option of filtered""" + key + """ " [value]="option.""" + first_lowercase(key) + """ ">
+                {{option.""" + first_lowercase(key) + """}}
+              </mat-option>
+            </mat-autocomplete>
+          </mat-form-field>
+"""
     if string == "":
         return """
         <mat-form-field>

@@ -15,7 +15,7 @@ def get_ts_type(key: str, variables: dict) -> str:
     elif "date" in variables[key].lower():
         return "Date"
     elif "datetime" in variables[key].lower():
-        return "number[]"
+        return "Date"
     elif "bit" in variables[key].lower():
         return "boolean"
     return "string"

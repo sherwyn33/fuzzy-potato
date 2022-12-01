@@ -2,19 +2,30 @@
 from collections import defaultdict
 from typing import List
 
+from JavaImpl.java_helper_functions import get_type
 from sql_object_detail import SqlObjectDetail
-from global_helper_functions import first_lowercase, sql_by_type
+from global_helper_functions import first_lowercase, sql_by_type, add_quotation_marks
 
 
 def get_java_impl(sql_obj_list: List[SqlObjectDetail]) -> str:
+
     for sql_obj in sql_obj_list:
         for key in sql_obj.variable_options:
             if "hidden" in sql_obj.variable_options[key]:
                 sql_obj.variable_names.pop(key)
     sql_obj_read, sql_obj_write = sql_by_type(sql_obj_list)
+    includeQuery = False
+    if "filterTable" in sql_obj_read.options:
+        includeQuery = True
+
     title = sql_obj_read.title
-    return get_constructor(title) + "\n\n" + create_get_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options) + "\n\n" + \
-           create_update_function(sql_obj_write.table_name, title, sql_obj_write.variable_names, sql_obj_write.variable_options) + '\n' + get_local_date_text() + "\n" + "}"
+    string = get_constructor(title) + "\n\n" + create_get_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options) + "\n\n" + \
+           create_update_function(sql_obj_write.table_name, title, sql_obj_write.variable_names, sql_obj_write.variable_options) +\
+            '\n' + get_local_date_text()
+    if includeQuery:
+        string = string + "\n\n" + create_query_function(sql_obj_read.table_name, title, sql_obj_read.variable_names, sql_obj_read.variable_options)
+
+    return string + "\n" + "}"
 
 
 def get_constructor(title: str):
@@ -26,8 +37,14 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Optional;
 
     public class """ + title + "DaoImpl implements " + title + "Dao \n" \
            + "{\n" + """    private final DataSource ds;
@@ -79,9 +96,9 @@ def get_recordset_getter(key: str, variables: dict):
         return 'rs.getInt("' + key + '")'
     elif "decimal" in variables[key].lower():
         return 'rs.getBigDecimal("' + key + '")'
-    elif "date" in variables[key].lower():
-        return 'toLocalDate(rs.getDate("' + key + '"))'
     elif "datetime" in variables[key].lower():
+        return 'toLocalDateTime(rs.getTimestamp("' + key + '"))'
+    elif "date" in variables[key].lower():
         return 'toLocalDate(rs.getDate("' + key + '"))'
     elif "bit" in variables[key].lower():
         return 'rs.getBoolean("' + key + '")'
@@ -104,7 +121,7 @@ def create_get_function(table_name: str, title: str, variables: dict, options: d
              stmt.setInt(1, id);
             try (ResultSet rs = stmt.executeQuery()) {
 
-                return readResultAs""" + title + """(rs);
+                return readResultAs""" + title + """s(rs).stream().findFirst().orElse(null);
             } catch (SQLException e) {
                 throw new DataAccessException(e);
             }
@@ -114,11 +131,13 @@ def create_get_function(table_name: str, title: str, variables: dict, options: d
         }
     }
 
-    private """ + title + """ readResultAs""" + title + "(ResultSet rs)" + """ throws SQLException {
-        if (rs.next()) {
-            return """ + get_object_builder(title, variables) + """;
+    private List<""" + title + """> readResultAs""" + title + "s(ResultSet rs)" + """ throws SQLException {
+        List<""" + title + """> result = new ArrayList<>();
+        while (rs.next()) {
+            """ + title + """ r = """ + get_object_builder(title, variables) + """;
+            result.add(r);
         }
-        return null;
+        return result;
     }"""
 
 
@@ -179,10 +198,10 @@ def get_recordset_setter(key: str, variables: dict) -> str:
         return "stmt.setInt(++c, command." + first_lowercase(key) + "());"
     elif "decimal" in variables[key].lower():
         return "stmt.setBigDecimal(++c, command." + first_lowercase(key) + "());"
-    elif "date" in variables[key].lower():
-        return "stmt.setDate(++c, command." + first_lowercase(
-            key) + "() != null ? java.sql.Date.valueOf(command." + first_lowercase(key) + "()) : null);"
     elif "datetime" in variables[key].lower():
+        return "stmt.setTimestamp(++c, command." + first_lowercase(
+            key) + "() != null ? Timestamp.valueOf(command." + first_lowercase(key) + "()) : null);"
+    elif "date" in variables[key].lower():
         return "stmt.setDate(++c, command." + first_lowercase(
             key) + "() != null ? java.sql.Date.valueOf(command." + first_lowercase(key) + "()) : null);"
     elif "bit" in variables[key].lower():
@@ -237,4 +256,109 @@ def get_local_date_text():
             return null;
 
         return date.toLocalDate();
+    }
+        
+    private LocalDateTime toLocalDateTime(Timestamp localDateTime)
+    {
+        return localDateTime == null ? null : localDateTime.toLocalDateTime();
+    }
+    """
+
+
+def create_query_function(table_name: str, title: str, variables: dict, options: dict):
+    filters = {key: options[key] for key in options if "filters" in options[key]}
+    fuzzysearch = {key: options[key] for key in options if "fuzzysearch" in options[key]}
+    search = {key: options[key] for key in options if "search" in options[key]}
+    filter_from = {key: options[key] for key in options if "filter_from" in options[key]}
+    filter_to = {key: options[key] for key in options if "filter_to" in options[key]}
+
+    inputs = "int pageSize, int page, String sort, String order, "
+    where = " WHERE "
+    statements = ""
+
+    for key in filters:
+        inputs = inputs + "List<" + get_type(key, variables) + "> " + key + "List, "
+        where = where + key + """ in (" + String.join(",", """ + key + """List) + ") AND """
+
+    if len(fuzzysearch) > 0:
+        statements = statements + """String escapedString = search.replace("%", "[%]");\n"""
+        inputs = inputs + "String search, "
+        where = where + " ("
+        for key in fuzzysearch:
+            where = where + key + " LIKE ? OR "
+            statements = statements + """stmt.setString(++c, "%" + escapedString + "%");\n"""
+        where = where[:-4]
+        where = where + ") AND "
+
+    for key in filter_from:
+        where = where + key + """ > ? AND """
+        inputs = inputs + "BigDecimal " + key + "FromFilter, "
+        statements = statements + "stmt.setBigDecimal(++c, " + key + "FromFilter" + ");\n"
+
+    for key in filter_to:
+        where = where + key + """ < ? AND """
+        inputs = inputs + "BigDecimal " + key + "ToFilter, "
+        statements = statements + "stmt.setBigDecimal(++c, " + key + "ToFilter" + ");\n"
+
+    statements2 = statements.replace("stmt","stmt2")
+
+    for key in search:
+        inputs = inputs + variables[key] + " " + first_lowercase(key) + ", "
+        where = where + "(" + key + " LIKE ? OR " + key + "LIKE IS NULL) AND "
+
+    search_vars = {key: variables[key] for key in search.keys()}
+    statements = statements + get_recordset_setters(search_vars)
+    statements = statements + """           
+            stmt.setInt(++c, page * pageSize);
+            stmt.setInt(++c, pageSize);
+            """
+    inputs = inputs[:-2]
+    where = where[:-5] + '" '
+
+    string = """    @Override
+    public """ + title + "Api GetByQuery(" + inputs + """) {
+        String sql = "Select """ + get_variable_name_list(variables, options) + \
+           "FROM " + table_name + where + """
+         + " Order By " + getOrderBy(sort, order) + 
+         " OFFSET (?) ROWS FETCH NEXT (?) ROWS ONLY";
+        String sqlCount = "Select  COUNT(1) As Count \\n" + 
+        "FROM """ + table_name + add_quotation_line() + where + """;
+                try (Connection conn = ds.getConnection() ;
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             PreparedStatement stmt2 = conn.prepareStatement(sqlCount)) {
+            int c= 0;
+            """ + statements + """            
+            try (ResultSet rs = stmt.executeQuery()) {
+                List<""" + title + """> result = readResultAs""" + title + """s(rs);
+                if (result.isEmpty())
+                    result = null;
+                c = 0;
+                """ + statements2 + """
+                try (ResultSet rs2 = stmt2.executeQuery()) {
+                    int count = 0; 
+                    if (rs2.next())
+                        count = rs2.getInt("Count");
+                    return new """ + title + """Api(count, result);
+                    }
+                }
+            }
+            catch (SQLException e) {
+                throw new DataAccessException(e);
+            }
+    }
+    
+    private String getOrderBy(String sort, String order) {
+        HashMap<String, String> sortMap = new HashMap<>();
+        """
+    for key in variables:
+        string = string + "sortMap.put(" + add_quotation_marks(first_lowercase(key)) + ", " + add_quotation_marks(key) + ");\n"
+
+    string = string + """HashMap<String, String> orderMap = new HashMap<>();
+    orderMap.put("asc", "asc");
+    orderMap.put("desc", "desc");
+
+        return sortMap.get(sort) + " " + orderMap.get(order);
     }"""
+
+    return string
+

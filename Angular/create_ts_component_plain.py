@@ -1,76 +1,58 @@
 from typing import List
 
-from Angular.typescript_helper_functions import full_name, quotation_variable
+from Angular.create_ts_component import create_autocomplete
+from Angular.typescript_helper_functions import full_name
 from sql_object_detail import SqlObjectDetail
 from global_helper_functions import first_lowercase, combine_sql_list
 
 
-def create_ts_component(sql_object_list: List[SqlObjectDetail]) -> str:
+def create_ts_component_plain(sql_object_list: List[SqlObjectDetail]) -> str:
     sql_obj = combine_sql_list(sql_object_list)
-    return create_constructor(sql_obj.title, sql_obj.variable_options) + create_init(sql_obj.title,
-            sql_obj.variable_options) + create_get_data(sql_obj.title, sql_obj.variable_options) + create_submit_data(
+    return create_constructor(sql_obj) + create_init(sql_obj) + create_get_data(sql_obj) + create_submit_data(
             sql_obj.title, sql_obj.variable_options) \
-               + create_delete_data() + create_template(sql_obj.title, sql_obj.variable_options) + create_matchip(
-            sql_obj.title, sql_obj.variable_options) + create_autocomplete(sql_obj) + create_workflow_functions()
+               + create_template(sql_obj.title, sql_obj.variable_options) + create_matchip(
+            sql_obj.title, sql_obj.variable_options) + create_autocomplete(sql_obj) + create_generic_functions(sql_obj.title) +"\n}"
 
 
-def create_constructor(title: str, options: dict) -> str:
-    string = """
-    workFlow : Workflow = <Workflow>{};
-  """ + first_lowercase(title) + """ : """ + title + """ = <""" + title + """>{};
-  private subscription: Subscription;
+def create_constructor(sql_obj: SqlObjectDetail) -> str:
+    string = """export class """ + sql_obj.title + """Component implements OnInit, OnDestroy, AfterViewInit {
+     """ + first_lowercase(sql_obj.title) + """ : """ + sql_obj.title + """ = <""" + sql_obj.title + """>{};
   isDisabled: boolean;
   """
-    chip_options = {key: options[key] for key in options if "matchip" in options[key]}
+    chip_options = {key: sql_obj.variable_options[key] for key in sql_obj.variable_options if "matchip" in sql_obj.variable_options[key]}
     if bool(chip_options):
         string = string + "separatorKeysCodes: number[] = [ENTER, COMMA, SPACE];\n @ViewChild('autosize') autosize: CdkTextareaAutosize;"
         for key in chip_options:
             string = string + "\nselected" + key + """: string[] = [];
           """ + first_lowercase(key) + """Ctrl = new FormControl('');
           """
-    email_options = {key: options[key] for key in options if "email-selector" in options[key]}
+    email_options = {key: sql_obj.variable_options[key] for key in sql_obj.variable_options if "email-selector" in sql_obj.variable_options[key]}
     if bool(email_options):
         for key in email_options:
             string = string + "\nselected" + key + """: string[] = [];
           """
-
-    autocomplete_options = {key: options[key] for key in options if "autocomplete" in options[key]}
+    autocomplete_options = {key: sql_obj.variable_options[key] for key in sql_obj.variable_options if "autocomplete" in sql_obj.variable_options[key]}
     for key in autocomplete_options:
-        string = string + "\nfiltered" + key + ": [];"
+        string = string + "\nfiltered" + key + ": [];\n"
 
-    string = string + "constructor(private " + first_lowercase(title) + "Service:" + title + """Service,
-                    private workflowService: WorkflowService,
+    string = string + "constructor(private " + first_lowercase(sql_obj.title) + "Service:" + sql_obj.title + """Service,
                     private router: Router,
                     private route: ActivatedRoute,
                     private dialog: MatDialog
             )
             {
-                this.workFlow = this.router.getCurrentNavigation().extras.state.workflow;
             }
             """
     return string
 
 
-def create_init(title: str, options: dict) -> str:
-    string = """
+def get_ng_onInit() -> str:
+    return """
     ngOnInit(): void {
-    this.subscription = this.route.queryParamMap.subscribe(p => this.updateFromParams(p));
     """
-    mat_slide = {key: options[key] for key in options if "matslide" in options[key]};
 
-    if bool(mat_slide):
-        for key in mat_slide:
-            string = string + "this." + full_name(title, key) + " = false;\n"
-
-    return string + """if (this.workFlow.referenceId > 0){
-      this.updateParams();
-    }
-}
-    ngOnDestroy(): void
-    {
-    this.subscription.unsubscribe();
-    }
-    
+def get_update_by_url(title: str) -> str:
+    return """    
     private updateFromParams(p: ParamMap)
     {
         const q = Number(p.get('q'));
@@ -97,19 +79,41 @@ def create_init(title: str, options: dict) -> str:
         console.log(s);
         return Promise.resolve(false);
       });
-  }
+  }"""
+
+def create_init(sql_obj: SqlObjectDetail) -> str:
+    string = get_ng_onInit()
+
+    mat_slide = {key: sql_obj.variable_options[key] for key in sql_obj.variable_options if "matslide" in sql_obj.variable_options[key]};
+
+    if bool(mat_slide):
+        for key in mat_slide:
+            string = string + "this." + full_name(sql_obj.title, key) + " = false;\n"
+
+    if "workflow" in sql_obj.options:
+        string = string + get_update_by_url(sql_obj.title)
+
+    if "modal" in sql_obj.options:
+        string = string + "this.get" + sql_obj.title + "(this.data?.id);"
+    return string + """
+}
 """
 
 
-def create_get_data(title: str, options: dict) -> str:
-    string = """  private get""" + title + """(id: number) {
-    this.""" + first_lowercase(title) + """Service.get(id).subscribe(data => {
-    this.""" + first_lowercase(title) + """ = data;
+def create_get_data(sql_obj:SqlObjectDetail) -> str:
+    string = "if (id != null){"
+    string = string + """  private get""" + sql_obj.title + """(id: number) {
+    this.""" + first_lowercase(sql_obj.title) + """Service.get(id).subscribe(data => {
+    this.""" + first_lowercase(sql_obj.title) + """ = data;
+    }"""
+    if "workflow" in sql_obj.options:
+        string = string + """
     if (this.workFlow.status != "Created") {
         this.isDisabled = true;
     }
     """
-    string = string + setup_fields_on_get(title, options)
+
+    string = string + setup_fields_on_get(sql_obj.title, sql_obj.variable_options)
     return string + " \n});\n}"
 
 
@@ -132,8 +136,8 @@ def setup_fields_on_get(title: str, options: dict) -> str:
 
 def create_submit_data(title: str, options: dict) -> str:
     string = """
-    submit(status : string): void {
-    this.setStatus(status);
+    submit(): void {
+    this.updateDate();
     """
     chip_options = {key: options[key] for key in options if
                     ("matchip" in options[key] or "email-selector" in options[key])}
@@ -141,33 +145,16 @@ def create_submit_data(title: str, options: dict) -> str:
         string = string + "this." + full_name(title, key) + " = this.selected" + key + """.join(", ").replace(" ", "");
         """
 
-    string = string + "this." + first_lowercase(title) + "Service.update(this." + first_lowercase(title) + """).subscribe((id) => {
-        this.updateDate();
-      if (this.workFlow.referenceId > 0) {
-        this.workflowService.updateWorkflow(this.workFlow).subscribe(() => {
-          alert("Workflow successfully updated.");
-          this.router.navigateByUrl("/workflow");
-        });
+    string = string + "this." + first_lowercase(title) + "Service.update(this." + first_lowercase(title) + """).subscribe(() => {
+      if (this.""" + first_lowercase(title) + """.Id > 0) {
+          alert("Item successfully updated.");
       }
       else {
-        this.workFlow.referenceId = id;
-        this.workflowService.updateWorkflow(this.workFlow).subscribe(() => {
-          alert("Workflow successfully created.");
-          this.router.navigateByUrl("/workflow");
-        });
+          alert("Item successfully created.");
       }
-    }, () => alert("Failed to update workflow."));
+    }, () => alert("Failed to update item."));
       """
     return string + "}\n"
-
-
-def create_delete_data():
-    return """delete(): void {
-    this.updateDate();
-    this.setStatus("Rejected");
-    this.workflowService.updateWorkflow(this.workFlow).subscribe(() => alert("Workflow successfully rejected."));
-  }
-  """
 
 
 def create_template(title: str, options: dict) -> str:
@@ -234,40 +221,10 @@ def create_matchip(title: str, options: dict) -> str:
   """
     return string
 
-def create_autocomplete(sql_obj: SqlObjectDetail):
-    autocomplete_options = {key: sql_obj.variable_options[key] for key in sql_obj.variable_options if "autocomplete" in sql_obj.variable_options[key]}
-    string = ""
-    for key in autocomplete_options:
-        string = string + """
-        filter""" + key + """(evt: string) {
-        evt = evt + "";
-        if (!evt || this.""" + full_name(sql_obj.title, key) + """.length < 3) this.filtered""" + key + """ = [];
-        else {
-          this.update""" + key + """();
-        }
-      }
-      
-        update""" + key + """() {
-    this.xxxService.find(this.""" + full_name(sql_obj.title, key) + """).subscribe(r => {
-        if (r == null) {
-          this.filtered""" + key + """ = []
-          return;
-        }
-        this.filtered""" + key + """ = r;
-        this.""" + full_name(sql_obj.title, key) + """ = this.""" + full_name(sql_obj.title, key) + """.trim();
-        }
-    );
-  }"""
 
-    return string
-
-
-def create_workflow_functions():
-    return """private setStatus(status: string){
-    this.workFlow.status = status;
-  }
-
+def create_generic_functions(title: str):
+    return """
   private updateDate() {
-    const now = new Date();
-    this.workFlow.dateUpdated = [now.getFullYear(), now.getMonth() + 1, now.getDate()];
+    const now = moment();
+    this.""" + first_lowercase(title) + """.dateUpdated = toDate(now);
   }"""

@@ -7,9 +7,9 @@ def get_type(key: str, variables: dict) -> str:
         return "int"
     elif "decimal" in variables[key].lower():
         return "BigDecimal"
-    elif "date" in variables[key].lower():
-        return "LocalDate"
     elif "datetime" in variables[key].lower():
+        return "LocalDateTime"
+    elif "date" in variables[key].lower():
         return "LocalDate"
     elif "bit" in variables[key].lower():
         return "Boolean"
