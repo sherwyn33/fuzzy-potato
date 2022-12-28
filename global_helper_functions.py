@@ -5,8 +5,8 @@ from typing import List, Dict
 from sql_object_detail import SqlObjectDetail
 
 
-def get_title_name(line: str, char_remove):
-    title = line.split()[2].split('.', 1)[1].replace('.', "").lstrip(char_remove)
+def get_title_name(line: str, char_remove_in_front):
+    title = line.split()[2].split('.', 1)[1].replace('.', "").lstrip(char_remove_in_front)
     if title[-2:].lower() == "es":
         return title[:-2]
     if title[-1].lower() == "s":
@@ -37,6 +37,7 @@ def find_table_name(word: str, lines: List[str]):
 def sql_by_type(sql_obj_list: List[SqlObjectDetail]) -> (SqlObjectDetail, SqlObjectDetail):
     sql_obj_read = [x for x in sql_obj_list if ("read" in x.options or "readwrite" in x.options)]
     sql_obj_write = [x for x in sql_obj_list if ("write" in x.options or "readwrite" in x.options)]
+
     if len(sql_obj_read) == 0:
         sql_obj_read = [sql_obj_list[-1]]
     if len(sql_obj_write) == 0:

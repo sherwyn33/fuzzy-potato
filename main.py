@@ -5,12 +5,16 @@
 from typing import List
 # import numpy as np
 from Angular.advanced.create_modal import create_ts_mhtml
-from Angular.advanced.create_ts_advanced import create_table_selection_table, create_table_selection_ts, \
+from Angular.advanced.create_ts_advanced import create_table_selection_table, \
     create_table_selection_api
 from Angular.create_ts_api import create_ts_api
 from Angular.create_ts_component import create_ts_component
+from Angular.create_ts_component_plain import create_ts_component_plain
 from Angular.create_ts_html import create_ts_html
 from Angular.create_ts_object import create_ts_object
+from Angular.create_ts_table import create_table
+from Angular.create_ts_table_html import create_filter_table_html
+from JavaImpl.Imports import create_import
 from JavaImpl.Lists.create_impl_list import get_java_impl_list
 from JavaImpl.Lists.create_java_list_api import create_java_api_list
 from JavaImpl.create_java_api import create_java_api
@@ -26,17 +30,21 @@ from global_helper_functions import get_title_name, get_type, find_table_name, s
 def create_text(name):
     # Use a breakpoint in the code line below to debug your script.
 
-    table = """
-CREATE TABLE dbo.ActiveDealerBanker
+    table = """Create TABLE dbo.AustinDrawdownSchedule
 (
-    Bis VARCHAR(20),
-    GroupCode VARCHAR(10),
-    DealerId VARCHAR(10),
-    Dealer VARCHAR(50),
-    BankerLocalId VARCHAR(10),
-    Banker VARCHAR(50)
-    )
-
+    AustinDrawdownScheduleId bigint identity
+        constraint PK_AustinDrawdownSchedule_AustinDrawdownScheduleId
+            primary key,
+    AustinLoanRequestsID bigint,
+    DrawDownDate Date,
+    Amount DECIMAL(18,4),
+    TypeId int,
+    TermRateVANote VarChar(30),
+    Term VarChar(5),  --matselect,
+    Rate  DECIMAL(18,4),
+    InterestOnlyYears DECIMAL(18,4),
+    AmortTerm DECIMAL(18,4),
+    IsDeleted Bit not  null constraint DF_AustinDrawdownSchedule_IsDeleted Default(0)
 """
     lines = table.splitlines()
 
@@ -77,9 +85,15 @@ CREATE TABLE dbo.ActiveDealerBanker
     sql_object_list.append(sql_obj)
     sql_obj_read, _ = sql_by_type(sql_object_list)
     title = sql_obj_read.title
-
+    includeQuery = False
+    if "filterTable" in sql_obj_read.options:
+        includeQuery = True
     if len(sql_object_list) == 0:
         raise Exception("Unable to process sql objects")
+
+    isWorkflow = False
+    if "workflow" in sql_obj_read.options:
+        isWorkflow = True
 
     if name == 'impl':
         string = get_java_impl(sql_object_list)
@@ -91,23 +105,34 @@ CREATE TABLE dbo.ActiveDealerBanker
     elif name == 'object':
         print(get_java_object(sql_object_list))
     elif name == 'japi':
-        print(create_java_api(title))
+        print(create_java_api(sql_object_list))
     elif name == 'japilist':
         print(create_java_api_list(title))
     elif name == 'tsobj':
         print(create_ts_object(sql_object_list))
     elif name == 'tsapi':
-        print((create_ts_api(title)))
+        print((create_ts_api(sql_object_list)))
     elif name == 'ahtml':
-        print((create_ts_html(sql_object_list)))
+        if includeQuery:
+            print(create_filter_table_html(sql_object_list))
+        else:
+            print((create_ts_html(sql_object_list)))
     elif name == 'ats':
-        print(create_ts_component(sql_object_list))
+        if includeQuery:
+            print(create_table(sql_obj_read))
+        else:
+            if isWorkflow:
+                print(create_ts_component(sql_object_list))
+            else:
+                print(create_ts_component_plain(sql_object_list))
     elif name == 'mahtml':
         print(create_ts_mhtml(sql_object_list))
     elif name == 'selectTable':
         print(create_table_selection_table(sql_object_list))
         print(create_table_selection_ts(sql_object_list))
         print(create_table_selection_api(sql_object_list))
+    elif name == 'import':
+        print(create_import(sql_obj_read))
 
 
 def get_junk_names():
@@ -124,12 +149,13 @@ def get_options(line: str) -> List[str]:
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     # create_text('object')
-    # create_text('impl')
+    create_text('impllist')
     # create_text('dao')
     # create_text('japi')
     # create_text('tsapi')
     # create_text('tsobj')
     # create_text('mahtml')
-    create_text('ats')
+    # create_text('ats')
+    # create_text('import')
 
 # impl, dao, object, japi, tsobj, tsapi, ahtml, ats
